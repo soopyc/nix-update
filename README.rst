@@ -15,7 +15,7 @@ Features
   - rubygems.org
 - update buildRustPackage's cargoSha256
 - update buildGoModule's vendorSha256/modSha256
-- build and run the resulting package (see `--build`, `--run` or `--shell` flag)
+- build, run NixOS test and the resulting package (see `--build`, `--test`, `--run` or `--shell` flag)
 - commit updated files (see `--commit` flag)
 
 Installation
@@ -95,6 +95,8 @@ With the `--shell`, `--build` and `--run` flags the update can be tested
    $ nix-update --shell nixpkgs-review
    # Also runs nix run
    $ nix-update --run nixpkgs-review
+   # Also builds NixOS tests (if any)
+   $ nix-update --test nixpkgs-review
 
 Nix-update also can optionally generate a commit message in the form
 `attribute: old_version -> new_version` with the applied version update:
