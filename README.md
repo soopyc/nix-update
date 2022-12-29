@@ -184,7 +184,7 @@ $ cd nixpkgs
 Now you can run `nix-update` just by specifying the full path to its executable wrapper:
 
 ```console
-$ ~/git/nix-update/bin/nix-update --commit hello
+$ ~/nix-update/bin/nix-update --commit hello
 ```
 
 ## TODO
