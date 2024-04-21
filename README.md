@@ -6,17 +6,20 @@ designed to work with nixpkgs but also other package sets.
 ## Features
 
 - automatically figure out the latest version of packages from:
-  - codeberg.org
+  - Codeberg
   - crates.io
-  - gitea.com
-  - github.com
-  - gitlab.com or other instances that uses fetchFromGitLab
-  - notabug.org
-  - pypi
-  - rubygems.org
+  - Gitea
+  - GitHub
+  - GitLab
+  - PyPi
+  - RubyGems.org
+  - Sourcehut
+  - Savannah
 - update buildRustPackage's cargoHash/cargoSha256 and cargoSetupHook's cargoDeps
 - update buildGoModule's vendorHash/vendorSha256
 - update buildNpmPackage's npmDepsHash and npmConfigHook's npmDeps
+- update buildComposerProject's vendorHash
+- update buildMavenPackage's mvnHash
 - update fetchYarnDeps offlineCache output hash
 - update flake outputs (see `--flake`)
 - build and run the resulting package (see `--build`,
@@ -28,11 +31,9 @@ designed to work with nixpkgs but also other package sets.
 
 ## Installation
 
-`nix-update` is included in nixpkgs (unstable channel, right
-now) or [NUR](https://github.com/nix-community/NUR)
-(nur.repos.mic92.nix-update).
+`nix-update` is included in nixpkgs.
 
-To use it run without installing it, use:
+To run without installing it, use:
 
 ```console
 $ nix-shell -p nix-update
@@ -74,7 +75,8 @@ $ nix-update attribute --flake [--version version]
 
 `nix-update` will than try to update either the
 `packages.{currentSystem}.{attribute}` or `{attribute}` output attribute of the
-given flake.
+given flake. To update a package in `legacyPackages`, pass the full path to that
+package including the platform: `legacyPackages.{platform}.{attribute}`.
 
 This example will fetch the latest github release:
 
@@ -88,13 +90,23 @@ It is also possible to specify the version manually
 $ nix-update --version=2.1.1 nixpkgs-review
 ```
 
+To update an unstable package to the latest commit of the default branch:
+
+```console
+$ nix-update --version=branch nixpkgs-review
+```
+
+To update an unstable package the latest commit from a certain branch:
+
+```console
+$ nix-update --version=branch=develop nixpkgs-review
+```
+
 To only update sources hashes without updating the version:
 
 ```console
 $ nix-update --version=skip nixpkgs-review
 ```
-
-Setting `--version` to `branch` instead, will look for the latest commit.
 
 To extract version information from versions with prefixes or suffixes,
 a regex can be used

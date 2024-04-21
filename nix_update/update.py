@@ -163,14 +163,17 @@ def update_cargo_deps_hash(opts: Options, filename: str, current_hash: str) -> N
 def update_cargo_lock(
     opts: Options, filename: str, dst: CargoLockInSource | CargoLockInStore
 ) -> None:
-    res = run(
-        [
-            "nix",
-            "build",
-            "--impure",
-            "--print-out-paths",
-            "--expr",
-            f"""
+    with tempfile.TemporaryDirectory() as tempdir:
+        res = run(
+            [
+                "nix",
+                "build",
+                "--out-link",
+                f"{tempdir}/result",
+                "--impure",
+                "--print-out-paths",
+                "--expr",
+                f"""
 {get_package(opts)}.overrideAttrs (old: {{
   cargoDeps = null;
   postUnpack = ''
@@ -178,34 +181,35 @@ def update_cargo_lock(
     exit
   '';
   outputs = [ "out" ];
+  separateDebugInfo = false;
 }})
 """,
-        ]
-        + opts.extra_flags,
-    )
-    src = Path(res.stdout.strip())
-    if not src.is_file():
-        return
+            ]
+            + opts.extra_flags,
+        )
+        src = Path(res.stdout.strip())
+        if not src.is_file():
+            return
 
-    with open(src, "rb") as f:
-        if isinstance(dst, CargoLockInSource):
-            with open(dst.path, "wb") as fdst:
-                shutil.copyfileobj(f, fdst)
-                f.seek(0)
+        with open(src, "rb") as f:
+            if isinstance(dst, CargoLockInSource):
+                with open(dst.path, "wb") as fdst:
+                    shutil.copyfileobj(f, fdst)
+                    f.seek(0)
 
-        hashes = {}
-        lock = tomllib.load(f)
-        regex = re.compile(r"git\+([^?]+)(\?(rev|tag|branch)=.*)?#(.*)")
-        git_deps = {}
-        for pkg in lock["package"]:
-            if source := pkg.get("source"):
-                if match := regex.fullmatch(source):
-                    rev = match[4]
-                    if rev not in git_deps:
-                        git_deps[rev] = f"{pkg['name']}-{pkg['version']}", match[1]
+            hashes = {}
+            lock = tomllib.load(f)
+            regex = re.compile(r"git\+([^?]+)(\?(rev|tag|branch)=.*)?#(.*)")
+            git_deps = {}
+            for pkg in lock["package"]:
+                if source := pkg.get("source"):
+                    if match := regex.fullmatch(source):
+                        rev = match[4]
+                        if rev not in git_deps:
+                            git_deps[rev] = f"{pkg['name']}-{pkg['version']}", match[1]
 
-        for k, v in ThreadPoolExecutor().map(git_prefetch, git_deps.items()):
-            hashes[k] = v
+            for k, v in ThreadPoolExecutor().map(git_prefetch, git_deps.items()):
+                hashes[k] = v
 
     with fileinput.FileInput(filename, inplace=True) as f:
         short = re.compile(r"(\s*)cargoLock\.lockFile\s*=\s*(.+)\s*;\s*")
@@ -243,6 +247,11 @@ def update_cargo_lock(
                 print(line, end="")
 
 
+def update_composer_deps_hash(opts: Options, filename: str, current_hash: str) -> None:
+    target_hash = nix_prefetch(opts, "composerRepository")
+    replace_hash(filename, current_hash, target_hash)
+
+
 def print_hashes(hashes: dict[str, str], indent: str) -> None:
     if not hashes:
         return
@@ -259,6 +268,11 @@ def update_npm_deps_hash(opts: Options, filename: str, current_hash: str) -> Non
 
 def update_yarn_deps_hash(opts: Options, filename: str, current_hash: str) -> None:
     target_hash = nix_prefetch(opts, "offlineCache")
+    replace_hash(filename, current_hash, target_hash)
+
+
+def update_maven_deps_hash(opts: Options, filename: str, current_hash: str) -> None:
+    target_hash = nix_prefetch(opts, "fetchedMavenDeps")
     replace_hash(filename, current_hash, target_hash)
 
 
@@ -309,7 +323,7 @@ def update_version(
         elif package.parsed_url.netloc == "github.com":
             _, owner, repo, *_ = package.parsed_url.path.split("/")
             package.diff_url = f"https://github.com/{owner}/{repo.removesuffix('.git')}/compare/{package.rev}...{new_version.rev or new_version.number}"
-        elif package.parsed_url.netloc in ["codeberg.org", "gitea.com", "notabug.org"]:
+        elif package.parsed_url.netloc in ["codeberg.org", "gitea.com"]:
             _, owner, repo, *_ = package.parsed_url.path.split("/")
             package.diff_url = f"https://{package.parsed_url.netloc}/{owner}/{repo}/compare/{package.rev}...{new_version.rev or new_version.number}"
         elif GITLAB_API.match(package.parsed_url.geturl()) and package.src_homepage:
@@ -367,10 +381,16 @@ def update(opts: Options) -> Package:
         ):
             update_cargo_lock(opts, package.filename, package.cargo_lock)
 
+        if package.composer_deps:
+            update_composer_deps_hash(opts, package.filename, package.composer_deps)
+
         if package.npm_deps:
             update_npm_deps_hash(opts, package.filename, package.npm_deps)
 
         if package.yarn_deps:
             update_yarn_deps_hash(opts, package.filename, package.yarn_deps)
+
+        if package.maven_deps:
+            update_maven_deps_hash(opts, package.filename, package.maven_deps)
 
     return package

@@ -47,6 +47,7 @@ class Package:
     url: str | None
     src_homepage: str | None
     changelog: str | None
+    maintainers: list[dict[str, str]] | None
     rev: str
     hash: str | None
     go_modules: str | None
@@ -54,6 +55,8 @@ class Package:
     cargo_deps: str | None
     npm_deps: str | None
     yarn_deps: str | None
+    composer_deps: str | None
+    maven_deps: str | None
     tests: list[str]
     has_update_script: bool
 
@@ -91,11 +94,28 @@ class Package:
 
 
 def eval_expression(
-    escaped_import_path: str, attr: str, flake: bool, system: str | None
+    escaped_import_path: str,
+    attr: str,
+    flake: bool,
+    system: str | None,
+    override_filename: str | None,
 ) -> str:
     system = f'"{system}"' if system else "builtins.currentSystem"
 
     if flake:
+        sanitize_position = (
+            f"""
+              sanitizePosition = {{ file, ... }}@pos:
+                assert substring 0 outPathLen file != outPath
+                  -> throw "${{file}} is not in ${{outPath}}";
+                pos // {{ file = {escaped_import_path} + substring outPathLen (stringLength file - outPathLen) file; }};
+            """
+            if override_filename is None
+            else """
+              sanitizePosition = x: x;
+            """
+        ).strip()
+
         let_bindings = f"""
           inherit (builtins) getFlake stringLength substring;
           currentSystem = {system};
@@ -103,10 +123,7 @@ def eval_expression(
           pkg = flake.packages.${{currentSystem}}.{attr} or flake.{attr};
           inherit (flake) outPath;
           outPathLen = stringLength outPath;
-          sanitizePosition = {{ file, ... }}@pos:
-            assert substring 0 outPathLen file != outPath
-              -> throw "${{file}} is not in ${{outPath}}";
-            pos // {{ file = {escaped_import_path} + substring outPathLen (stringLength file - outPathLen) file; }};
+          {sanitize_position}
         """
     else:
         let_bindings = f"""
@@ -157,18 +174,25 @@ in {{
       if res.success then res.value.file else false
     else
       null;
+  composer_deps = pkg.composerRepository.outputHash or null;
   npm_deps = pkg.npmDeps.outputHash or null;
   yarn_deps = pkg.offlineCache.outputHash or null;
+  maven_deps = pkg.fetchedMavenDeps.outputHash or null;
   tests = builtins.attrNames (pkg.passthru.tests or {{}});
   has_update_script = {has_update_script};
   src_homepage = pkg.src.meta.homepage or null;
   changelog = pkg.meta.changelog or null;
+  maintainers = pkg.meta.maintainers or null;
 }}"""
 
 
 def eval_attr(opts: Options) -> Package:
     expr = eval_expression(
-        opts.escaped_import_path, opts.escaped_attribute, opts.flake, opts.system
+        opts.escaped_import_path,
+        opts.escaped_attribute,
+        opts.flake,
+        opts.system,
+        opts.override_filename,
     )
     cmd = [
         "nix",
